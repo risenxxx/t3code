@@ -2,6 +2,7 @@ import { DownloadIcon, CopyIcon, CheckIcon, Code2Icon, EyeIcon, Table2Icon } fro
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { Spinner } from "~/components/ui/spinner";
 import {
+  AuthOrchestrationOperateScope,
   AuthPreviewOperateScope,
   type EditorId,
   type EnvironmentId,
@@ -45,7 +46,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { mediaFileReference } from "@t3tools/client-runtime/media-reference";
-import { FolderTree, Globe2, WrapTextIcon } from "lucide-react";
+import { ExternalLinkIcon, FolderTree, Globe2, WrapTextIcon } from "lucide-react";
 import * as Schema from "effect/Schema";
 import {
   lazy,
@@ -56,7 +57,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 
-import { isBrowserPreviewFile, openFileInPreview } from "~/browser/openFileInPreview";
+import { isBrowserPreviewFile, isHtmlFile, openFileInPreview } from "~/browser/openFileInPreview";
 import { useAssetUrlRefresh, useAssetUrlState } from "~/assets/assetUrls";
 import { OpenInPicker } from "~/components/chat/OpenInPicker";
 import { MediaVideoPlayer } from "~/components/media/MediaVideoPlayer";
@@ -85,6 +86,7 @@ import { previewEnvironment } from "~/state/preview";
 import { serverEnvironment } from "~/state/server";
 import { useEnvironmentScope } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { shellEnvironment } from "~/state/shell";
 import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 
 import { AttachmentFilePreview } from "./AttachmentFilePreview";
@@ -1141,6 +1143,7 @@ export default function FilePreviewPanel({
   const [wordWrapOverride, setWordWrapOverride] = useState<boolean | null>(null);
   const wordWrap = wordWrapOverride ?? defaultWordWrap;
   const canOperatePreview = useEnvironmentScope(environmentId, AuthPreviewOperateScope);
+  const canOperateHost = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const hostEnvironmentId = useAtomValue(hostEnvironmentIdAtom);
   const remoteOpenState = useRemoteOpenState(environmentId);
@@ -1153,6 +1156,7 @@ export default function FilePreviewPanel({
   const openPreview = useAtomCommand(previewEnvironment.open, {
     reportFailure: false,
   });
+  const openInEditor = useAtomCommand(shellEnvironment.openInEditor, { reportFailure: false });
   const isVideo = relativePath !== null && isWorkspaceVideoPreviewPath(relativePath);
   const isAudio = relativePath !== null && !isVideo && isWorkspaceAudioPreviewPath(relativePath);
   const isImage = relativePath !== null && !isVideo && isWorkspaceImagePreviewPath(relativePath);
@@ -1342,6 +1346,13 @@ export default function FilePreviewPanel({
       : relativePath && attachment === undefined
         ? resolvePathLinkTarget(relativePath, cwd)
         : null;
+  const canOpenInDefaultBrowser =
+    canOperateHost &&
+    remoteOpenState.mode === "local-exec" &&
+    availableEditors.includes("file-manager") &&
+    absolutePath !== null &&
+    previewPath !== null &&
+    isHtmlFile(previewPath);
   const onFilePostRender = useFileLineReveal(relativePath, revealLine, revealRequestId);
   // Mounting the file read under the workspace mutation id refetches it after each mutation.
   useAtomMount(
@@ -1400,6 +1411,25 @@ export default function FilePreviewPanel({
         stackedThreadToast({
           type: "error",
           title: "Unable to open file in browser",
+          description: error instanceof Error ? error.message : "An error occurred.",
+        }),
+      );
+    })();
+  };
+
+  const handleOpenInDefaultBrowser = () => {
+    if (!canOpenInDefaultBrowser || absolutePath === null) return;
+    void (async () => {
+      const result = await openInEditor({
+        environmentId,
+        input: { cwd: absolutePath, editor: "file-manager" },
+      });
+      if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
+      const error = squashAtomCommandFailure(result);
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Unable to open file in default browser",
           description: error instanceof Error ? error.message : "An error occurred.",
         }),
       );
@@ -1497,6 +1527,11 @@ export default function FilePreviewPanel({
           {canOpenInBrowser ? (
             <FileSurfaceAction label="Open file in preview browser" onPress={handleOpenInBrowser}>
               <Globe2 className="size-3.5" />
+            </FileSurfaceAction>
+          ) : null}
+          {canOpenInDefaultBrowser ? (
+            <FileSurfaceAction label="Open in default browser" onPress={handleOpenInDefaultBrowser}>
+              <ExternalLinkIcon className="size-3.5" />
             </FileSurfaceAction>
           ) : null}
           {!isHostFile && previewPath !== null ? (

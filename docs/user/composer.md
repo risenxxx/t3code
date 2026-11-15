@@ -422,6 +422,11 @@ On web and desktop, HTML and PDF files open as rendered pages. Switch an HTML
 file to source view to read its markup; a link to a specific line opens source
 automatically. HTML previews cannot access your T3 Code session.
 
+To open an agent's HTML file in your default browser instead, Option-click (Alt-click on
+Windows and Linux) its link in chat, or choose **Open in default browser** from the link's
+right-click menu or the file viewer toolbar. This is available when T3 Code runs on the same
+machine as the file.
+
 The file viewer recognizes images, HTML, and PDF files by their filename extension,
 including filenames or folders containing `#` or `?`.
 
