@@ -12,7 +12,10 @@ import { FolderIcon } from "lucide-react";
 import { contextMenuSourceOf } from "../../contextMenuSource";
 import { readLocalApi } from "../../localApi";
 import { cn } from "../../lib/utils";
-import { shouldOpenMarkdownFileLinkInEditor } from "../../markdown-links";
+import {
+  shouldOpenMarkdownFileLinkInDefaultBrowser,
+  shouldOpenMarkdownFileLinkInEditor,
+} from "../../markdown-links";
 import type { markdownFileCopyPaths } from "../../markdownFileHostPath";
 import { documentChipKindForFileName } from "../../pierre-icons";
 import { ContextChip } from "../ContextChip";
@@ -45,6 +48,7 @@ interface MarkdownFileLinkProps {
   resolveCopyPaths: () => Promise<ReturnType<typeof markdownFileCopyPaths>>;
   openInEditorMenuLabel: string;
   onOpenInBrowser?: (() => Promise<AtomCommandResult<unknown, unknown>>) | undefined;
+  onOpenInDefaultBrowser?: (() => Promise<AtomCommandResult<unknown, unknown>>) | undefined;
   onOpenMedia?: (() => void) | undefined;
   onReveal?: (() => Promise<AtomCommandResult<unknown, unknown>>) | undefined;
   revealLabel?: string | undefined;
@@ -69,48 +73,55 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
   onOpenInPanel,
   openInEditorMenuLabel,
   onOpenInBrowser,
+  onOpenInDefaultBrowser,
   onOpenMedia,
   onReveal,
   revealLabel,
   resolveCopyPaths,
 }: MarkdownFileLinkProps) {
-  const handleOpenInEditor = () => {
-    if (!onOpen) {
+  const runFileAction = (
+    action: (() => Promise<AtomCommandResult<unknown, unknown>>) | undefined,
+    operation: string,
+    title: string,
+  ) => {
+    if (!action) {
       return;
     }
+    const report = (cause: unknown, error: unknown) => {
+      reportMarkdownActionFailure({ operation, target: targetPath }, cause);
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title,
+          description: error instanceof Error ? error.message : "An error occurred.",
+        }),
+      );
+    };
     void (async () => {
       try {
-        const result = await onOpen();
+        const result = await action();
         if (result._tag === "Success" || isAtomCommandInterrupted(result)) {
           return;
         }
-        reportMarkdownActionFailure(
-          { operation: "open-file-in-editor", target: targetPath },
-          result.cause,
-        );
-        const error = squashAtomCommandFailure(result);
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Unable to open file",
-            description: error instanceof Error ? error.message : "An error occurred.",
-          }),
-        );
+        report(result.cause, squashAtomCommandFailure(result));
       } catch (cause) {
-        reportMarkdownActionFailure(
-          { operation: "open-file-in-editor", target: targetPath },
-          cause,
-        );
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Unable to open file",
-            description: cause instanceof Error ? cause.message : "An error occurred.",
-          }),
-        );
+        report(cause, cause);
       }
     })();
   };
+
+  const handleOpenInEditor = () =>
+    runFileAction(onOpen, "open-file-in-editor", "Unable to open file");
+  const handleOpenInBrowser = () =>
+    runFileAction(onOpenInBrowser, "open-file-in-browser", "Unable to open file in browser");
+  const handleOpenInDefaultBrowser = () =>
+    runFileAction(
+      onOpenInDefaultBrowser,
+      "open-file-in-default-browser",
+      "Unable to open file in default browser",
+    );
+  const handleRevealInFileManager = () =>
+    runFileAction(onReveal, "reveal-file-in-file-manager", "Unable to reveal file");
 
   const handleOpenInFilePreview = () => {
     if (threadRef && panelPath) {
@@ -122,82 +133,6 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
       return;
     }
     handleOpenInEditor();
-  };
-
-  const handleOpenInBrowser = () => {
-    if (!onOpenInBrowser) {
-      return;
-    }
-    void (async () => {
-      try {
-        const result = await onOpenInBrowser();
-        if (result._tag === "Success" || isAtomCommandInterrupted(result)) {
-          return;
-        }
-        reportMarkdownActionFailure(
-          { operation: "open-file-in-browser", target: targetPath },
-          result.cause,
-        );
-        const error = squashAtomCommandFailure(result);
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Unable to open file in browser",
-            description: error instanceof Error ? error.message : "An error occurred.",
-          }),
-        );
-      } catch (cause) {
-        reportMarkdownActionFailure(
-          { operation: "open-file-in-browser", target: targetPath },
-          cause,
-        );
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Unable to open file in browser",
-            description: cause instanceof Error ? cause.message : "An error occurred.",
-          }),
-        );
-      }
-    })();
-  };
-
-  const handleRevealInFileManager = () => {
-    if (!onReveal) {
-      return;
-    }
-    void (async () => {
-      try {
-        const result = await onReveal();
-        if (result._tag === "Success" || isAtomCommandInterrupted(result)) {
-          return;
-        }
-        reportMarkdownActionFailure(
-          { operation: "reveal-file-in-file-manager", target: targetPath },
-          result.cause,
-        );
-        const error = squashAtomCommandFailure(result);
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Unable to reveal file",
-            description: error instanceof Error ? error.message : "An error occurred.",
-          }),
-        );
-      } catch (cause) {
-        reportMarkdownActionFailure(
-          { operation: "reveal-file-in-file-manager", target: targetPath },
-          cause,
-        );
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Unable to reveal file",
-            description: cause instanceof Error ? cause.message : "An error occurred.",
-          }),
-        );
-      }
-    })();
   };
 
   const handleCopy = (resolveValue: () => Promise<string>, title: string) => {
@@ -253,6 +188,9 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
           ...(onOpenInBrowser
             ? ([{ id: "open-in-browser", label: "Open in integrated browser" }] as const)
             : []),
+          ...(onOpenInDefaultBrowser
+            ? ([{ id: "open-in-default-browser", label: "Open in default browser" }] as const)
+            : []),
           ...(onReveal && revealLabel ? ([{ id: "reveal", label: revealLabel }] as const) : []),
           ...copyItems.map(({ id, label }) => ({ id, label })),
         ] as const,
@@ -270,6 +208,10 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
       }
       if (clicked === "open-in-browser") {
         handleOpenInBrowser();
+        return;
+      }
+      if (clicked === "open-in-default-browser") {
+        handleOpenInDefaultBrowser();
         return;
       }
       if (clicked === "reveal") {
@@ -336,6 +278,10 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
+                if (onOpenInDefaultBrowser && shouldOpenMarkdownFileLinkInDefaultBrowser(event)) {
+                  handleOpenInDefaultBrowser();
+                  return;
+                }
                 if (onOpen && shouldOpenMarkdownFileLinkInEditor(event)) {
                   handleOpenInEditor();
                   return;
@@ -415,6 +361,7 @@ function areMarkdownFileLinkPropsEqual(
     previous.onOpenInPanel === next.onOpenInPanel &&
     previous.openInEditorMenuLabel === next.openInEditorMenuLabel &&
     previous.onOpenInBrowser === next.onOpenInBrowser &&
+    previous.onOpenInDefaultBrowser === next.onOpenInDefaultBrowser &&
     previous.onOpenMedia === next.onOpenMedia &&
     previous.onReveal === next.onReveal &&
     previous.resolveCopyPaths === next.resolveCopyPaths &&

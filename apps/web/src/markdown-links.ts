@@ -31,6 +31,12 @@ export function shouldOpenMarkdownFileLinkInEditor(
   return isTerminalLinkActivation(event, platform);
 }
 
+export function shouldOpenMarkdownFileLinkInDefaultBrowser(
+  event: Pick<MouseEvent, "altKey" | "metaKey" | "ctrlKey" | "shiftKey">,
+): boolean {
+  return event.altKey && !event.metaKey && !event.ctrlKey && !event.shiftKey;
+}
+
 export function rewriteMarkdownFileUriHref(href: string | undefined): string | null {
   if (!href) return null;
   const target = parseFileUrlHref(normalizeMarkdownLinkDestination(href));

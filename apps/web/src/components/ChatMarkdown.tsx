@@ -191,6 +191,7 @@ import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { isPreviewAvailableFor } from "../browser/previewRuntime";
 import {
   isBrowserPreviewFile,
+  isHtmlFile,
   openFileInPreview,
   openUrlInPreview,
   BrowserPreviewUnavailableError,
@@ -963,6 +964,18 @@ function useChatMarkdownState({
           isPreviewAvailableFor(threadRef.environmentId) &&
           isBrowserPreviewFile(fileLinkMeta.filePath)
             ? () => openMarkdownFileInPreview(fileLinkMeta.filePath)
+            : undefined
+        }
+        onOpenInDefaultBrowser={
+          environmentId !== null &&
+          canUseShellActions &&
+          availableEditors.includes("file-manager") &&
+          isHtmlFile(fileLinkMeta.filePath)
+            ? async () =>
+                openInEditor({
+                  environmentId,
+                  input: { cwd: (await resolveHostPath()).absolutePath, editor: "file-manager" },
+                })
             : undefined
         }
       />
